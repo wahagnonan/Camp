@@ -14,11 +14,7 @@ from .serializers import (
     CoursSerializer,
     EmploiDuTempsJourResponseSerializer,
     EmploiDuTempsSemaineResponseSerializer,
-    ErreurResponseSerializer,
-    InfoZoneSerializer,
-    StatistiquesSerializer,
-    RechercheParametresSerializer,
-    RechercheResultatSerializer
+    ErreurResponseSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -29,7 +25,7 @@ class EmploiDuTempsDuJourAPIView(APIView):
     Gère : Jour, Date spécifique, Semaine, Actualisation.
     """
     
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         try:
             zone = self._get_zone_param(request)
             date_cible = self._get_date_param(request)
@@ -56,12 +52,28 @@ class EmploiDuTempsDuJourAPIView(APIView):
         return int(request.GET.get('zone', '2'))
     
     def _get_date_param(self, request):
+        """Récupère et valide le paramètre date (QueryParam ou PathParam)."""
+        # 1. Priorité aux paramètres de chemin (URL: /16/02/2026/)
+        if 'jour' in self.kwargs and 'mois' in self.kwargs and 'annee' in self.kwargs:
+            try:
+                return date(self.kwargs['annee'], self.kwargs['mois'], self.kwargs['jour'])
+            except ValueError:
+                raise ValueError("Date invalide dans l'URL")
+
+        # 2. Paramètre GET standard (?date=...)
         date_str = request.GET.get('date')
-        if not date_str: return date.today()
-        try:
-            return datetime.strptime(date_str, '%Y-%m-%d').date()
-        except ValueError:
-            raise ValueError("Format date invalide (YYYY-MM-DD)")
+        
+        if not date_str:
+            return date.today()
+        
+        # Support de plusieurs formats
+        for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y'):
+            try:
+                return datetime.strptime(date_str, fmt).date()
+            except ValueError:
+                continue
+                
+        raise ValueError("Le format de date doit être YYYY-MM-DD ou DD/MM/YYYY")
     
     def _get_bool_param(self, request, param, default):
         val = request.GET.get(param, str(default))
@@ -161,96 +173,3 @@ class EmploiDuTempsDuJourAPIView(APIView):
         return Response({
             'erreur': msg, 'code': code, 'details': details or {}, 'timestamp': timezone.now()
         }, status=code)
-
-class ZonesDisponiblesAPIView(APIView):
-    def get(self, request):
-        # Cours n'a pas de zone. On mocke.
-        return Response({
-            'zones_disponibles': [2],
-            'zone_par_defaut': 2,
-            'zones_avec_donnees': [{'zone': 2, 'nom': 'Salles UPGC', 'actif': True}]
-        })
-
-class StatistiquesAPIView(APIView):
-    def get(self, request):
-        total = Cours.objects.count()
-        last = Cours.objects.order_by('-date_import').first()
-        maj = last.date_import if last else None
-        
-        stats = Cours.objects.values('type_cours').annotate(total=Count('id')).order_by('-total')
-        jours = Cours.objects.values('jour').distinct().count()
-        
-        return Response({
-            'total_evenements': total,
-            'dernier_mise_a_jour': maj,
-            'statistiques_par_type': list(stats),
-            'zone_active': 2,
-            'jours_avec_donnees': jours
-        })
-
-class RechercheAPIView(APIView):
-    def get(self, request):
-        p = request.GET
-        # Mapping param -> field
-        # matiere -> intitule
-        # activite -> type_cours
-        qs = Cours.objects.all()
-        
-        if p.get('matiere'): qs = qs.filter(intitule__icontains=p['matiere'])
-        if p.get('enseignant'): qs = qs.filter(enseignant__icontains=p['enseignant'])
-        if p.get('salle'): qs = qs.filter(salle__icontains=p['salle'])
-        if p.get('type_activite'): qs = qs.filter(type_cours__icontains=p['type_activite'])
-        if p.get('date_debut'): qs = qs.filter(jour__gte=p['date_debut'])
-        if p.get('date_fin'): qs = qs.filter(jour__lte=p['date_fin'])
-        
-        qs = qs.order_by('jour', 'horaire')
-        return Response({
-            'criteres_recherche': p,
-            'nombre_resultats': qs.count(),
-            'resultats': CoursSerializer(qs, many=True).data,
-            'timestamp': timezone.now()
-        })
-
-class SanteAPIView(APIView):
-    def get(self, request):
-        statut_db = 'ok'
-        try: Cours.objects.count()
-        except Exception as e: statut_db = str(e)
-        
-        return Response({
-            'statut': 'en_ligne',
-            'composants': {'base_de_donnees': statut_db, 'api': 'ok'}
-        })
-
-class SynchronisationAPIView(APIView):
-    def post(self, request):
-        zone = request.data.get('zone', 2)
-        jours = request.data.get('jours', 7)
-        debut = request.data.get('date_debut')
-        if debut: start = datetime.strptime(debut, '%Y-%m-%d').date()
-        else: start = date.today()
-        
-        extracteur = ExtracteurUPGC()
-        results = []
-        
-        for i in range(jours):
-            d = start + timedelta(days=i)
-            # Force scraping
-            try:
-                data = extracteur.recuperer_emploi_du_temps(zone=zone, date_cible=d)
-                count = 0
-                for item in data:
-                    Cours.objects.update_or_create(
-                        jour=item['jour'], horaire=item['horaire'], ressource=item['ressource'],
-                        defaults={
-                            'type_cours': item['type_cours'], 'enseignant': item['enseignant'],
-                            'intitule': item['intitule'], 'niveau': item['niveau'],
-                            'salle': item['salle']
-                        }
-                    )
-                    count += 1
-                results.append({'date': d, 'statut': 'succes', 'count': count})
-            except Exception as e:
-                results.append({'date': d, 'statut': 'erreur', 'msg': str(e)})
-                
-        return Response({'sync': results})

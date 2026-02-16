@@ -8,7 +8,10 @@ db.sqlite3
 db.sqlite3-journal
 /media
 /staticfiles
-
+verify_view_call.py
+verify_serialization.py
+verify_scraper_fix.py
+verify_view_call.py
 # Python
 *.py[cod]
 *$py.class

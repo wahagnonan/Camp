@@ -1,4 +1,3 @@
-# emplois/serializers.py
 from rest_framework import serializers
 from .models import Cours
 
@@ -34,31 +33,4 @@ class ErreurResponseSerializer(serializers.Serializer):
     erreur = serializers.CharField()
     code = serializers.IntegerField()
     details = serializers.DictField(required=False)
-    timestamp = serializers.DateTimeField()
-
-class InfoZoneSerializer(serializers.Serializer):
-    zones_disponibles = serializers.ListField()
-    zone_par_defaut = serializers.IntegerField()
-    zones_avec_donnees = serializers.ListField()
-
-class StatistiquesSerializer(serializers.Serializer):
-    total_evenements = serializers.IntegerField()
-    dernier_mise_a_jour = serializers.DateTimeField(allow_null=True)
-    statistiques_par_type = serializers.ListField()
-    zone_active = serializers.IntegerField()
-    jours_avec_donnees = serializers.IntegerField()
-
-class RechercheParametresSerializer(serializers.Serializer):
-    matiere = serializers.CharField(required=False)
-    enseignant = serializers.CharField(required=False)
-    salle = serializers.CharField(required=False)
-    type_activite = serializers.CharField(required=False)
-    date_debut = serializers.DateField(required=False)
-    date_fin = serializers.DateField(required=False)
-    zone = serializers.IntegerField(required=False)
-
-class RechercheResultatSerializer(serializers.Serializer):
-    criteres_recherche = serializers.DictField()
-    nombre_resultats = serializers.IntegerField()
-    resultats = CoursSerializer(many=True)
     timestamp = serializers.DateTimeField()
